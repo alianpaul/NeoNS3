@@ -73,7 +73,6 @@ namespace ns3
 
     SetupParameters();
 
-    SetupApplications();
   }
 
   void 
@@ -91,8 +90,8 @@ namespace ns3
     NS_LOG_DEBUG("Hosts per pod(n) : " << m_numHostPerPod);
     NS_LOG_DEBUG("Expected number of flows per switch : " << m_numExpectedFlowsPerSwtch);
     NS_LOG_DEBUG("Total bps of all apps on a hst : " << m_bpsHst.GetBitRate());
-    NS_LOG_DEBUG("Number of simulation virtual intervals : " << m_numVirtualInterval);
-    NS_LOG_DEBUG("Interval time time(ms) : " << m_intervalTime.GetMilliSeconds());
+    NS_LOG_DEBUG("Number of virtual intervals : " << m_numVirtualInterval);
+    NS_LOG_DEBUG("Interval time(ms) : " << m_intervalTime.GetMilliSeconds());
     //NS_LOG_DEBUG(m_intervalTime.GetDouble());
 
     /*Calculate the number of flows that each host should generate,
@@ -151,18 +150,23 @@ namespace ns3
     m_mouseBps = CreateObject<ExponentialRandomVariable>();;
     m_mouseBps->SetAttribute("Mean", DoubleValue(bpsMeanMousePerFlow));
     m_mouseBps->SetAttribute("Bound", DoubleValue(bpsBoundMousePerFlow));
-    
+
+    /*Set minBps*/
+    m_minBps = DataRate(512 * 8 / m_intervalTime.GetSeconds());
+    NS_LOG_DEBUG("Min bps of a flow : " << m_minBps.GetBitRate());
+
     return;
   }
 
   void 
   NeoFlowGenerator::SetupApplications()
   {
+    NS_LOG_DEBUG("\n");
     NS_LOG_DEBUG("===Setup flow applications===");
-    NS_LOG_DEBUG("Interval : " << m_idxVirtualInterval << " Start From: " 
-		 << Simulator::Now().GetMilliSeconds() << "ms");
+    NS_LOG_DEBUG("Interval " << m_idxVirtualInterval);
+    NS_LOG_DEBUG("Start From: " << Simulator::Now().GetMilliSeconds() << "ms");
 
-    /*
+    /**/
     for(int iSrcPod = 0; iSrcPod < m_numPod; ++iSrcPod)
       {
 	NS_LOG_DEBUG("Host in pod " << iSrcPod << " setting");
@@ -172,18 +176,30 @@ namespace ns3
 
 	    SetupFlowsOriginFrom(iSrcPod, iSrcHst);
 	    //SetupTestFlowsOriginFrom(iSrcPod, iSrcHst)；
-	    Ptr<Node> node = m_podHostNodes[iSrcPod].Get(iSrcHst);
-	    NS_LOG_DEBUG("Total apps on node : " << node->GetNApplications());
 	  }
 	
       }
-    */
+    
+    for(int iSrcPod = 0; iSrcPod < m_numPod; ++iSrcPod)
+      {
+	NS_LOG_DEBUG("Host in pod " << iSrcPod << " setting");
+	for(int iSrcHst = 0; iSrcHst < m_numHostPerPod; ++iSrcHst)
+	  {
+	    Ptr<Node> node = m_podHostNodes[iSrcPod].Get(iSrcHst);
+	    NS_LOG_DEBUG("Hst "<< iSrcHst << " apps num : " << node->GetNApplications());
+	  }
+      }
+    
+
+    /*
     Ptr<Node> srcNode = m_podHostNodes[0].Get(0);
     Ptr<Node> dstNode = m_podHostNodes[3].Get(0);
     uint64_t  bps = m_elephantBps->GetInteger();
-    SetupUDPFlow(srcNode, dstNode, bps, port++, Simulator::Now(), Simulator::Now()+m_intervalTime); 
+    SetupUDPFlow(srcNode, dstNode, bps, port++, Time(0.), m_intervalTime); 
+    */
 
     //Setup next virtual interval simulation
+    /*
     ++m_idxVirtualInterval;
     if(m_idxVirtualInterval < m_numVirtualInterval)
       {
@@ -194,14 +210,16 @@ namespace ns3
       {
 	NS_LOG_DEBUG("All flow generated");
       }
+    */
+    ++m_idxVirtualInterval;
   }
 
   void
   NeoFlowGenerator::SetupFlowsOriginFrom(int iSrcPod, int iSrcHst)
   {
     Ptr<Node> srcNode   = m_podHostNodes[iSrcPod].Get(iSrcHst);
-    Time      startTime = Simulator::Now();
-    Time      endTime   = Simulator::Now() + m_intervalTime;
+    Time      startTime (MilliSeconds(0.0001));
+    Time      endTime   = m_intervalTime;
 
     /*1.Set up inter Pod flows
      */
@@ -222,18 +240,31 @@ namespace ns3
 	Ptr<Node> dstNode = m_podHostNodes[iDstPod].Get(iDstHst);
 	NS_ASSERT_MSG(srcNode != dstNode, "Do not send to yourself");
 	uint64_t  bps = 0;
-	if(iF < numElephantThreshold) bps = m_elephantBps->GetInteger();
-	else bps = m_mouseBps->GetInteger();
-	Time offset(m_startTimeOffset->GetValue());
+	while(bps < m_minBps.GetBitRate())
+	  {
+	    if(iF < numElephantThreshold) bps = m_elephantBps->GetInteger();
+	    else bps = m_mouseBps->GetInteger();
+	  }
+	Time startOffset(m_startTimeOffset->GetValue());
+	Time endOffset(m_startTimeOffset->GetValue());
 	
 	/*
+	if(m_idxVirtualInterval == 3)
+	  {
+	    NS_LOG_DEBUG("srcPod "   << iSrcPod << " srcHst " << iSrcHst 
+			 << " dstPod " << iDstPod << " dstHst " << iDstHst
+			 << " port "   << port << " bps " << bps
+			 << " " << (startTime + startOffset).GetMilliSeconds() 
+			 << " " << (endTime - endOffset).GetMilliSeconds());
+	  }
+	
 	NS_LOG_DEBUG("srcPod "   << iSrcPod << " srcHst " << iSrcHst 
 		     << " dstPod " << iDstPod << " dstHst " << iDstHst
 		     << " port "   << port << " bps " << bps
 		     << " " << (startTime + offset).GetMilliSeconds() 
 		     << " " << endTime.GetMilliSeconds());
 	*/
-	SetupUDPFlow(srcNode, dstNode, bps, port, startTime + offset, endTime);
+	SetupUDPFlow(srcNode, dstNode, bps, port, startTime + startOffset, endTime - endOffset);
 
 	//Update Pod Host index;
 	nextHostInPod[nextPod]++; 
@@ -264,18 +295,31 @@ namespace ns3
 	Ptr<Node> dstNode = m_podHostNodes[iSrcPod].Get(nextHstInSrcPod);
 	NS_ASSERT_MSG(srcNode != dstNode, "Do not sent to yourself");
 	uint64_t bps = 0;
-	if(iF < numElephantThreshold) bps = m_elephantBps->GetInteger();
-	else bps = m_mouseBps->GetInteger();
-	Time offset(m_startTimeOffset->GetValue());
-
+	while(bps < m_minBps.GetBitRate())
+	  {
+	    if(iF < numElephantThreshold) bps = m_elephantBps->GetInteger();
+	    else bps = m_mouseBps->GetInteger();
+	  }
+	Time startOffset(m_startTimeOffset->GetValue());
+	Time endOffset(m_startTimeOffset->GetValue());
 	/*
+	if(m_idxVirtualInterval == 3)
+	  {
+	    NS_LOG_DEBUG("srcPod "   << iSrcPod << " srcHst " << iSrcHst 
+			 << " dstPod " << iSrcPod << " dstHst " << nextHstInSrcPod
+			 << " port "   << port << " bps " << bps
+			 << " " << (startTime + startOffset).GetMilliSeconds() 
+			 << " " << (endTime - endOffset).GetMilliSeconds());
+	  }
+
+	
 	NS_LOG_DEBUG("srcPod "   << iSrcPod << " srcHst " << iSrcHst 
 		     << " dstPod " << iSrcPod << " dstHst " << nextHstInSrcPod
 		     << " port "   << port << " bps " << bps
 		     << " " << (startTime + offset).GetMilliSeconds() 
 		     << " " << endTime.GetMilliSeconds());
 	*/
-	SetupUDPFlow(srcNode, dstNode, bps, port, startTime + offset, endTime);
+	SetupUDPFlow(srcNode, dstNode, bps, port, startTime + startOffset, endTime - endOffset);
 
 	//Update Host index
 	++nextHstInSrcPod;
@@ -318,6 +362,7 @@ namespace ns3
 				 uint64_t bps, uint16_t port, 
 				 const Time& startTime, const Time& endTime)
   {
+
     ApplicationContainer apps;
     
     Ipv4Address dstIpv4Addr = GetIpv4Addr(dstNode); 
@@ -325,7 +370,7 @@ namespace ns3
 		      Address(InetSocketAddress(dstIpv4Addr, port)));
     onOff.SetConstantRate(DataRate(bps));
     //For debug
-    onOff.SetAttribute("MaxBytes", UintegerValue(512));
+    //onOff.SetAttribute("MaxBytes", UintegerValue(512));
     apps.Add(onOff.Install(srcNode));
   
     PacketSinkHelper sink("ns3::UdpSocketFactory",

@@ -23,10 +23,10 @@ namespace ns3
     NeoFlowGenerator();
     
     void Initialize(std::vector<NodeContainer> podHostNodes);
+    void SetupApplications();
 
   private:
     void SetupParameters();
-    void SetupApplications();
 
     void SetupFlowsOriginFrom(int iSrcSub, int iSrcHst);
     void SetupTestFlowsOriginFrom(int iSrcSub, int iSrcHst);
@@ -42,7 +42,7 @@ namespace ns3
     int16_t m_numHostPerPod;
     int16_t m_numPod;
 
-    Time                           m_intervalTime;    //Attribute
+    Time                           m_intervalTime;       //Attribute
     Ptr<ExponentialRandomVariable> m_startTimeOffset;
     int16_t                        m_numVirtualInterval;  //Attribute
     int16_t                        m_idxVirtualInterval;
@@ -54,6 +54,7 @@ namespace ns3
     DataRate                       m_bpsHst;  //Attribute
     Ptr<ExponentialRandomVariable> m_elephantBps;
     Ptr<ExponentialRandomVariable> m_mouseBps;
+    DataRate                       m_minBps; //ensure that flows send a packet in a interval
   };
 
 }
